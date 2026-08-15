@@ -1,3 +1,30 @@
-"use client"
-import {FormEvent,useState} from "react";import {createClient} from "@/lib/supabase/client";import {useRouter} from "next/navigation";import Link from "next/link"
-export default function Checkout(){const [name,setName]=useState("");const [email,setEmail]=useState("");const [address,setAddress]=useState("");const [error,setError]=useState("");const router=useRouter();async function submit(e:FormEvent){e.preventDefault();const {data:{user}}=await createClient().auth.getUser();if(!user){router.push("/auth/login");return}const items=JSON.parse(sessionStorage.getItem("northstar-cart")||"[]");if(!items.length){setError("Your cart is empty.");return}const total=items.reduce((s:{total:number},i:{price_cents:number;quantity:number})=>({total:s.total+i.price_cents*i.quantity}),{total:0}).total;const supabase=createClient();const key=crypto.randomUUID();const {data:order,error}=await supabase.from("orders").insert({user_id:user.id,total_cents:total,shipping_name:name,shipping_email:email,shipping_address:address,idempotency_key:key}).select("id").single();if(error||!order){setError("We could not create your order. Please try again.");return}await supabase.from("order_items").insert(items.map((i:{id:string;quantity:number;price_cents:number})=>({order_id:order.id,product_id:i.id,quantity:i.quantity,unit_price_cents:i.price_cents})));sessionStorage.removeItem("northstar-cart");router.push(`/thank-you?order=${order.id}`)}return <main><div className="shell page-title"><div className="eyebrow">Almost home</div><h1>Checkout</h1></div><section className="section"><div className="shell"><form className="form" onSubmit={submit}><label>Full name<input className="input" required value={name} onChange={e=>setName(e.target.value)}/></label><label>Email<input className="input" type="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Delivery address<textarea className="input" rows={4} required value={address} onChange={e=>setAddress(e.target.value)}/></label>{error&&<p className="notice">{error}</p>}<button className="btn btn-primary">Place order</button><p><Link href="/cart">Return to cart</Link></p></form></div></section></main>}
+'use client'
+
+import { FormEvent, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+
+export default function Checkout() {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [error, setError] = useState('')
+  const router = useRouter()
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    const items = JSON.parse(sessionStorage.getItem('northstar-cart') || '[]') as Array<{ id: string; quantity: number }>
+    if (!items.length) return setError('Your cart is empty.')
+    const response = await fetch('/api/orders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, address, idempotency_key: crypto.randomUUID(), items: items.map((item) => ({ product_id: item.id, quantity: item.quantity })) }),
+    })
+    const result = await response.json()
+    if (!response.ok) return setError(result.error || 'We could not place your order.')
+    sessionStorage.removeItem('northstar-cart')
+    router.push(`/thank-you?order=${result.orderId}`)
+  }
+
+  return <main><div className="shell page-title"><div className="eyebrow">Almost home</div><h1>Checkout</h1></div><section className="section"><div className="shell"><form className="form" onSubmit={submit}><label>Full name<input className="input" required value={name} onChange={(event) => setName(event.target.value)} /></label><label>Email<input className="input" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>Delivery address<textarea className="input" rows={4} required value={address} onChange={(event) => setAddress(event.target.value)} /></label>{error && <p className="notice">{error}</p>}<button className="btn btn-primary">Place order</button><p><Link href="/cart">Return to cart</Link></p></form></div></section></main>
+}
